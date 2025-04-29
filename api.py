@@ -23,7 +23,16 @@ from main import processar_ortomosaico
 # Carregar variáveis de ambiente
 load_dotenv()
 
-# Configuração de logging
+# Configuração de logging global
+# Mover para cá garante que o logger seja configurado quando o módulo é importado
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(str(Path("/root/processamento_ortomosaicos/logs/api.log"))),
+        logging.StreamHandler() # Mantém o log no console também
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Criar aplicação FastAPI
@@ -87,18 +96,36 @@ def enviar_webhook(id_projeto, id_talhao, status, mensagem=None):
 # Função para executar processamento em background
 def executar_processamento_background(id_projeto, id_talhao):
     """Executa o processamento em background e envia webhooks."""
+    logger.info(f"Iniciando processamento em background para projeto {id_projeto}, talhão {id_talhao}")
     try:
+        # Verificar variáveis de ambiente
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        webhook_url = os.getenv("WEBHOOK_URL")
+        
+        logger.info(f"Configurações: SUPABASE_URL={'configurado' if supabase_url else 'não configurado'}, "
+                   f"SUPABASE_KEY={'configurado' if supabase_key else 'não configurado'}, "
+                   f"WEBHOOK_URL={'configurado' if webhook_url else 'não configurado'}")
+        
+        if not all([supabase_url, supabase_key]):
+            raise ValueError("Credenciais do Supabase não configuradas")
+        
         # Notificar início
+        logger.info("Enviando webhook de início")
         enviar_webhook(id_projeto, id_talhao, "iniciado")
         
         # Executar processamento
+        logger.info("Iniciando função de processamento")
         sucesso = processar_ortomosaico(id_projeto, id_talhao)
-        
-        # Webhook final é enviado dentro da função processar_ortomosaico
+        logger.info(f"Processamento concluído com sucesso: {sucesso}")
         
     except Exception as e:
         logger.error(f"Erro no processamento background: {str(e)}", exc_info=True)
-        enviar_webhook(id_projeto, id_talhao, "erro", mensagem=str(e))
+        try:
+            enviar_webhook(id_projeto, id_talhao, "erro", mensagem=str(e))
+        except Exception as webhook_error:
+            logger.error(f"Erro ao enviar webhook de erro: {str(webhook_error)}")
+        raise  # Re-lança a exceção para garantir que ela seja registrada pelo FastAPI
 
 # Rotas da API
 @app.post("/processar", response_model=ProcessamentoResponse)
@@ -163,16 +190,6 @@ async def verificar_status(id_projeto: str):
 
 # Ponto de entrada para execução direta
 if __name__ == "__main__":
-    # Configurar logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(str(Path("~/processamento_ortomosaicos/logs/api.log").expanduser())),
-            logging.StreamHandler()
-        ]
-    )
-    
     # Iniciar servidor
     uvicorn.run(
         "api:app",

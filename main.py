@@ -23,22 +23,6 @@ import iv_gen
 import ranking_gen
 import relatorio_gen
 
-# Configuração de logging
-def setup_logging():
-    """Configura o sistema de logs."""
-    log_dir = Path("~/processamento_ortomosaicos/logs").expanduser()
-    log_file = log_dir / f"processamento_{time.strftime('%Y%m%d_%H%M%S')}.log"
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-    return logging.getLogger(__name__)
-
 def criar_diretorio_temporario(id_projeto):
     """Cria um diretório temporário para o projeto."""
     tmp_dir = Path("~/processamento_ortomosaicos/tmp").expanduser() / id_projeto
@@ -142,7 +126,7 @@ if __name__ == "__main__":
     load_dotenv()
     
     # Configurar logging
-    logger = setup_logging()
+    logger = logging.getLogger(__name__)
     
     # Verificar argumentos da linha de comando
     if len(sys.argv) < 3:

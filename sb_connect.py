@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 import supabase
+import httpx
+from supabase.lib.client_options import ClientOptions
 
 # Configuração de logging
 logger = logging.getLogger(__name__)
@@ -37,8 +39,14 @@ def conectar():
         raise ValueError("Credenciais do Supabase não configuradas no arquivo .env")
     
     try:
-        client = supabase.create_client(url, key)
-        logger.info("Conexão com Supabase estabelecida com sucesso")
+        # Definir timeout mais longo para uploads grandes (5 minutos)
+        client_options = ClientOptions(storage_client_timeout=300)
+        client = supabase.create_client(
+            url, 
+            key,
+            options=client_options
+        )
+        logger.info("Conexão com Supabase estabelecida com sucesso (timeout de storage aumentado)")
         return client
     
     except Exception as e:
@@ -114,22 +122,25 @@ def enviar_arquivo(client, caminho_local, caminho_bucket):
         
         # Ler o arquivo
         with open(caminho_local, 'rb') as f:
-            file_data = f.read()
-        
-        # Enviar o arquivo
-        response = client.storage.from_(bucket).upload(
-            caminho_arquivo,
-            file_data,
-            {"content-type": "application/octet-stream", "upsert": True}
-        )
+            # Enviar o arquivo (passando o objeto de arquivo 'f' diretamente)
+            logger.debug(f"Iniciando a chamada client.storage.from_('{bucket}').upload('{caminho_arquivo}') com upsert=true (streaming)...")
+            response = client.storage.from_(bucket).upload(
+                caminho_arquivo,
+                f, # Passar o objeto de arquivo para streaming
+                {"content-type": "application/octet-stream", "upsert": "true"} 
+            )
+            logger.debug(f"Chamada de upload concluída. Status da resposta: {response.status_code if hasattr(response, 'status_code') else 'N/A'}")
         
         logger.info(f"Arquivo enviado com sucesso para {caminho_bucket}")
         
         # Retornar URL público se disponível
+        logger.debug(f"Tentando obter URL pública para {caminho_bucket}...")
         try:
             url = client.storage.from_(bucket).get_public_url(caminho_arquivo)
+            logger.debug(f"URL pública obtida: {url}")
             return url
-        except:
+        except Exception as url_error:
+            logger.warning(f"Não foi possível obter URL pública para {caminho_bucket}: {url_error}")
             return None
     
     except Exception as e:
